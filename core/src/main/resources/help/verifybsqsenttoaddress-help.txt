@@ -1,0 +1,39 @@
+verifybsqsenttoaddress
+
+NAME
+----
+verifybsqsenttoaddress - verify KNZ sent to wallet address
+
+SYNOPSIS
+--------
+verifybsqsenttoaddress
+		--address=<bsq-address>
+		--amount=<bsq-amount>
+
+DESCRIPTION
+-----------
+Verify an exact amount of KNZ was sent to a specific KOINZ wallet's KNZ address.
+Receipt of KNZ to a KNZ (altcoin) payment account address should always be verified
+before a KNZ seller sends a confirmpaymentreceived message for a KNZ/BTC trade.
+
+Warning:  The verification result should be considered a false positive if a KNZ wallet
+address has received the same amount of KNZ in more than one transaction.  A way to
+avoid this problem is to use different KNZ payment accounts for different trades, so
+the payment account receiving address will vary from trade to trade.  Another way is to
+slightly vary your offer amounts and KNZ prices (if you are the maker), to make sure the
+received KNZ amounts vary from trade to trade.  Doing all of the above further reduces
+the chance of a false positive.  Another step is to check your KNZ wallet balance when
+you verify KNZ has been received to an address.
+
+OPTIONS
+-------
+--address
+        The receiving KNZ address.
+
+--amount
+		The amount of KNZ received.
+
+EXAMPLES
+--------
+Verify 500.00 KNZ was sent to address Bn3PCQgRwhkrGnaMp1RYwt9tFwL51YELqne:
+$ ./koinz-cli --password=xyz --port=9998 verifybsqsenttoaddress --address=Bn3PCQgRwhkrGnaMp1RYwt9tFwL51YELqne --amount=500.00

@@ -1,0 +1,7 @@
+# KOINZ DAO Testnet Seed Nodes
+# nodeaddress:port [(@owner)]
+koinz-seednode-1.testnet.koinz.pro:8003 (@KOINZ-DAO-Team)
+koinz-seednode-2.testnet.koinz.pro:8003 (@KOINZ-DAO-Team)
+# Direct IP fallbacks for DAO testnet
+157.245.3.234:8003 (@KOINZ-DAO-Seed-1)
+138.197.115.242:8003 (@KOINZ-DAO-Seed-2)

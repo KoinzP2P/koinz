@@ -1,0 +1,17 @@
+getunusedbsqaddress
+
+NAME
+----
+getunusedbsqaddress - get KNZ receiving address
+
+SYNOPSIS
+--------
+getunusedbsqaddress
+
+DESCRIPTION
+-----------
+Returns an unused KNZ receiving address.
+
+EXAMPLES
+--------
+$ ./koinz-cli --password=xyz --port=9998 getunusedbsqaddress

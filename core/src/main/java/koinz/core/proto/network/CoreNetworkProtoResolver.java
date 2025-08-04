@@ -1,0 +1,324 @@
+/*
+ * This file is part of KOINZ.
+ *
+ * KOINZ is free software: you can redistribute it and/or modify it
+ * under the terms of the GNU Affero General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or (at
+ * your option) any later version.
+ *
+ * KOINZ is distributed in the hope that it will be useful, but WITHOUT
+ * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+ * FITNESS FOR A PARTICULAR PURPOSE. See the GNU Affero General Public
+ * License for more details.
+ *
+ * You should have received a copy of the GNU Affero General Public License
+ * along with KOINZ. If not, see <http://www.gnu.org/licenses/>.
+ */
+
+package koinz.core.proto.network;
+
+import koinz.core.alert.Alert;
+import koinz.core.alert.PrivateNotificationMessage;
+import koinz.core.dao.burningman.accounting.node.messages.GetAccountingBlocksRequest;
+import koinz.core.dao.burningman.accounting.node.messages.GetAccountingBlocksResponse;
+import koinz.core.dao.burningman.accounting.node.messages.NewAccountingBlockBroadcastMessage;
+import koinz.core.dao.governance.blindvote.network.messages.RepublishGovernanceDataRequest;
+import koinz.core.dao.governance.proposal.storage.temp.TempProposalPayload;
+import koinz.core.dao.monitoring.network.messages.GetBlindVoteStateHashesRequest;
+import koinz.core.dao.monitoring.network.messages.GetBlindVoteStateHashesResponse;
+import koinz.core.dao.monitoring.network.messages.GetDaoStateHashesRequest;
+import koinz.core.dao.monitoring.network.messages.GetDaoStateHashesResponse;
+import koinz.core.dao.monitoring.network.messages.GetProposalStateHashesRequest;
+import koinz.core.dao.monitoring.network.messages.GetProposalStateHashesResponse;
+import koinz.core.dao.monitoring.network.messages.NewBlindVoteStateHashMessage;
+import koinz.core.dao.monitoring.network.messages.NewDaoStateHashMessage;
+import koinz.core.dao.monitoring.network.messages.NewProposalStateHashMessage;
+import koinz.core.dao.node.messages.GetBlocksRequest;
+import koinz.core.dao.node.messages.GetBlocksResponse;
+import koinz.core.dao.node.messages.NewBlockBroadcastMessage;
+import koinz.core.filter.Filter;
+import koinz.core.network.p2p.inventory.messages.GetInventoryRequest;
+import koinz.core.network.p2p.inventory.messages.GetInventoryResponse;
+import koinz.core.offer.availability.messages.OfferAvailabilityRequest;
+import koinz.core.offer.availability.messages.OfferAvailabilityResponse;
+import koinz.core.offer.bisq_v1.OfferPayload;
+import koinz.core.offer.bsq_swap.BsqSwapOfferPayload;
+import koinz.core.proto.CoreProtoResolver;
+import koinz.core.support.dispute.arbitration.arbitrator.Arbitrator;
+import koinz.core.support.dispute.arbitration.messages.PeerPublishedDisputePayoutTxMessage;
+import koinz.core.support.dispute.mediation.mediator.Mediator;
+import koinz.core.support.dispute.messages.DisputeResultMessage;
+import koinz.core.support.dispute.messages.OpenNewDisputeMessage;
+import koinz.core.support.dispute.messages.PeerOpenedDisputeMessage;
+import koinz.core.support.dispute.refund.refundagent.RefundAgent;
+import koinz.core.support.messages.ChatMessage;
+import koinz.core.trade.protocol.bisq_v1.messages.CounterCurrencyTransferStartedMessage;
+import koinz.core.trade.protocol.bisq_v1.messages.DelayedPayoutTxSignatureRequest;
+import koinz.core.trade.protocol.bisq_v1.messages.DelayedPayoutTxSignatureResponse;
+import koinz.core.trade.protocol.bisq_v1.messages.DepositTxAndDelayedPayoutTxMessage;
+import koinz.core.trade.protocol.bisq_v1.messages.DepositTxMessage;
+import koinz.core.trade.protocol.bisq_v1.messages.InputsForDepositTxRequest;
+import koinz.core.trade.protocol.bisq_v1.messages.InputsForDepositTxResponse;
+import koinz.core.trade.protocol.bisq_v1.messages.MediatedPayoutTxPublishedMessage;
+import koinz.core.trade.protocol.bisq_v1.messages.MediatedPayoutTxSignatureMessage;
+import koinz.core.trade.protocol.bisq_v1.messages.PayoutTxPublishedMessage;
+import koinz.core.trade.protocol.bisq_v1.messages.PeerPublishedDelayedPayoutTxMessage;
+import koinz.core.trade.protocol.bisq_v1.messages.RefreshTradeStateRequest;
+import koinz.core.trade.protocol.bisq_v1.messages.ShareBuyerPaymentAccountMessage;
+import koinz.core.trade.protocol.bisq_v1.messages.TraderSignedWitnessMessage;
+import koinz.core.trade.protocol.bsq_swap.messages.BsqSwapFinalizeTxRequest;
+import koinz.core.trade.protocol.bsq_swap.messages.BsqSwapFinalizedTxMessage;
+import koinz.core.trade.protocol.bsq_swap.messages.BsqSwapTxInputsMessage;
+import koinz.core.trade.protocol.bsq_swap.messages.BuyersBsqSwapRequest;
+import koinz.core.trade.protocol.bsq_swap.messages.SellersBsqSwapRequest;
+
+import koinz.network.p2p.AckMessage;
+import koinz.network.p2p.BundleOfEnvelopes;
+import koinz.network.p2p.CloseConnectionMessage;
+import koinz.network.p2p.FileTransferPart;
+import koinz.network.p2p.PrefixedSealedAndSignedMessage;
+import koinz.network.p2p.peers.getdata.messages.GetDataResponse;
+import koinz.network.p2p.peers.getdata.messages.GetUpdatedDataRequest;
+import koinz.network.p2p.peers.getdata.messages.PreliminaryGetDataRequest;
+import koinz.network.p2p.peers.keepalive.messages.Ping;
+import koinz.network.p2p.peers.keepalive.messages.Pong;
+import koinz.network.p2p.peers.peerexchange.messages.GetPeersRequest;
+import koinz.network.p2p.peers.peerexchange.messages.GetPeersResponse;
+import koinz.network.p2p.storage.messages.AddDataMessage;
+import koinz.network.p2p.storage.messages.AddPersistableNetworkPayloadMessage;
+import koinz.network.p2p.storage.messages.RefreshOfferMessage;
+import koinz.network.p2p.storage.messages.RemoveDataMessage;
+import koinz.network.p2p.storage.messages.RemoveMailboxDataMessage;
+import koinz.network.p2p.storage.payload.MailboxStoragePayload;
+import koinz.network.p2p.storage.payload.ProtectedMailboxStorageEntry;
+import koinz.network.p2p.storage.payload.ProtectedStorageEntry;
+
+import koinz.common.proto.ProtobufferException;
+import koinz.common.proto.ProtobufferRuntimeException;
+import koinz.common.proto.network.NetworkEnvelope;
+import koinz.common.proto.network.NetworkPayload;
+import koinz.common.proto.network.NetworkProtoResolver;
+
+import javax.inject.Inject;
+import javax.inject.Singleton;
+
+import java.time.Clock;
+
+import lombok.extern.slf4j.Slf4j;
+
+// TODO Use ProtobufferException instead of ProtobufferRuntimeException
+@Slf4j
+@Singleton
+public class CoreNetworkProtoResolver extends CoreProtoResolver implements NetworkProtoResolver {
+    @Inject
+    public CoreNetworkProtoResolver(Clock clock) {
+        this.clock = clock;
+    }
+
+    @Override
+    public NetworkEnvelope fromProto(protobuf.NetworkEnvelope proto) throws ProtobufferException {
+        if (proto != null) {
+            final int messageVersion = proto.getMessageVersion();
+            switch (proto.getMessageCase()) {
+                case PRELIMINARY_GET_DATA_REQUEST:
+                    return PreliminaryGetDataRequest.fromProto(proto.getPreliminaryGetDataRequest(), messageVersion);
+                case GET_DATA_RESPONSE:
+                    return GetDataResponse.fromProto(proto.getGetDataResponse(), this, messageVersion);
+                case GET_UPDATED_DATA_REQUEST:
+                    return GetUpdatedDataRequest.fromProto(proto.getGetUpdatedDataRequest(), messageVersion);
+
+                case GET_PEERS_REQUEST:
+                    return GetPeersRequest.fromProto(proto.getGetPeersRequest(), messageVersion);
+                case GET_PEERS_RESPONSE:
+                    return GetPeersResponse.fromProto(proto.getGetPeersResponse(), messageVersion);
+                case PING:
+                    return Ping.fromProto(proto.getPing(), messageVersion);
+                case PONG:
+                    return Pong.fromProto(proto.getPong(), messageVersion);
+                case FILE_TRANSFER_PART:
+                    return FileTransferPart.fromProto(proto.getFileTransferPart(), messageVersion);
+
+                case OFFER_AVAILABILITY_REQUEST:
+                    return OfferAvailabilityRequest.fromProto(proto.getOfferAvailabilityRequest(), messageVersion);
+                case OFFER_AVAILABILITY_RESPONSE:
+                    return OfferAvailabilityResponse.fromProto(proto.getOfferAvailabilityResponse(), messageVersion);
+                case REFRESH_OFFER_MESSAGE:
+                    return RefreshOfferMessage.fromProto(proto.getRefreshOfferMessage(), messageVersion);
+
+                case ADD_DATA_MESSAGE:
+                    return AddDataMessage.fromProto(proto.getAddDataMessage(), this, messageVersion);
+                case REMOVE_DATA_MESSAGE:
+                    return RemoveDataMessage.fromProto(proto.getRemoveDataMessage(), this, messageVersion);
+                case REMOVE_MAILBOX_DATA_MESSAGE:
+                    return RemoveMailboxDataMessage.fromProto(proto.getRemoveMailboxDataMessage(), this, messageVersion);
+
+                case CLOSE_CONNECTION_MESSAGE:
+                    return CloseConnectionMessage.fromProto(proto.getCloseConnectionMessage(), messageVersion);
+                case PREFIXED_SEALED_AND_SIGNED_MESSAGE:
+                    return PrefixedSealedAndSignedMessage.fromProto(proto.getPrefixedSealedAndSignedMessage(), messageVersion);
+
+                // trade protocol messages
+                case REFRESH_TRADE_STATE_REQUEST:
+                    return RefreshTradeStateRequest.fromProto(proto.getRefreshTradeStateRequest(), messageVersion);
+                case INPUTS_FOR_DEPOSIT_TX_REQUEST:
+                    return InputsForDepositTxRequest.fromProto(proto.getInputsForDepositTxRequest(), this, messageVersion);
+                case INPUTS_FOR_DEPOSIT_TX_RESPONSE:
+                    return InputsForDepositTxResponse.fromProto(proto.getInputsForDepositTxResponse(), this, messageVersion);
+                case DEPOSIT_TX_MESSAGE:
+                    return DepositTxMessage.fromProto(proto.getDepositTxMessage(), messageVersion);
+                case DELAYED_PAYOUT_TX_SIGNATURE_REQUEST:
+                    return DelayedPayoutTxSignatureRequest.fromProto(proto.getDelayedPayoutTxSignatureRequest(), messageVersion);
+                case DELAYED_PAYOUT_TX_SIGNATURE_RESPONSE:
+                    return DelayedPayoutTxSignatureResponse.fromProto(proto.getDelayedPayoutTxSignatureResponse(), messageVersion);
+                case DEPOSIT_TX_AND_DELAYED_PAYOUT_TX_MESSAGE:
+                    return DepositTxAndDelayedPayoutTxMessage.fromProto(proto.getDepositTxAndDelayedPayoutTxMessage(), this, messageVersion);
+                case SHARE_BUYER_PAYMENT_ACCOUNT_MESSAGE:
+                    return ShareBuyerPaymentAccountMessage.fromProto(proto.getShareBuyerPaymentAccountMessage(), this, messageVersion);
+
+                case SELLERS_BSQ_SWAP_REQUEST:
+                    return SellersBsqSwapRequest.fromProto(proto.getSellersBsqSwapRequest(), messageVersion);
+                case BUYERS_BSQ_SWAP_REQUEST:
+                    return BuyersBsqSwapRequest.fromProto(proto.getBuyersBsqSwapRequest(), messageVersion);
+                case BSQ_SWAP_TX_INPUTS_MESSAGE:
+                    return BsqSwapTxInputsMessage.fromProto(proto.getBsqSwapTxInputsMessage(), messageVersion);
+                case BSQ_SWAP_FINALIZE_TX_REQUEST:
+                    return BsqSwapFinalizeTxRequest.fromProto(proto.getBsqSwapFinalizeTxRequest(), messageVersion);
+                case BSQ_SWAP_FINALIZED_TX_MESSAGE:
+                    return BsqSwapFinalizedTxMessage.fromProto(proto.getBsqSwapFinalizedTxMessage(), messageVersion);
+
+                case COUNTER_CURRENCY_TRANSFER_STARTED_MESSAGE:
+                    return CounterCurrencyTransferStartedMessage.fromProto(proto.getCounterCurrencyTransferStartedMessage(), messageVersion);
+
+                case PAYOUT_TX_PUBLISHED_MESSAGE:
+                    return PayoutTxPublishedMessage.fromProto(proto.getPayoutTxPublishedMessage(), messageVersion);
+                case PEER_PUBLISHED_DELAYED_PAYOUT_TX_MESSAGE:
+                    return PeerPublishedDelayedPayoutTxMessage.fromProto(proto.getPeerPublishedDelayedPayoutTxMessage(), messageVersion);
+                case TRADER_SIGNED_WITNESS_MESSAGE:
+                    return TraderSignedWitnessMessage.fromProto(proto.getTraderSignedWitnessMessage(), messageVersion);
+
+                case MEDIATED_PAYOUT_TX_SIGNATURE_MESSAGE:
+                    return MediatedPayoutTxSignatureMessage.fromProto(proto.getMediatedPayoutTxSignatureMessage(), messageVersion);
+                case MEDIATED_PAYOUT_TX_PUBLISHED_MESSAGE:
+                    return MediatedPayoutTxPublishedMessage.fromProto(proto.getMediatedPayoutTxPublishedMessage(), messageVersion);
+
+                case OPEN_NEW_DISPUTE_MESSAGE:
+                    return OpenNewDisputeMessage.fromProto(proto.getOpenNewDisputeMessage(), this, messageVersion);
+                case PEER_OPENED_DISPUTE_MESSAGE:
+                    return PeerOpenedDisputeMessage.fromProto(proto.getPeerOpenedDisputeMessage(), this, messageVersion);
+                case CHAT_MESSAGE:
+                    return ChatMessage.fromProto(proto.getChatMessage(), messageVersion);
+                case DISPUTE_RESULT_MESSAGE:
+                    return DisputeResultMessage.fromProto(proto.getDisputeResultMessage(), messageVersion);
+                case PEER_PUBLISHED_DISPUTE_PAYOUT_TX_MESSAGE:
+                    return PeerPublishedDisputePayoutTxMessage.fromProto(proto.getPeerPublishedDisputePayoutTxMessage(), messageVersion);
+
+                case PRIVATE_NOTIFICATION_MESSAGE:
+                    return PrivateNotificationMessage.fromProto(proto.getPrivateNotificationMessage(), messageVersion);
+
+                case GET_BLOCKS_REQUEST:
+                    return GetBlocksRequest.fromProto(proto.getGetBlocksRequest(), messageVersion);
+                case GET_BLOCKS_RESPONSE:
+                    return GetBlocksResponse.fromProto(proto.getGetBlocksResponse(), messageVersion);
+                case NEW_BLOCK_BROADCAST_MESSAGE:
+                    return NewBlockBroadcastMessage.fromProto(proto.getNewBlockBroadcastMessage(), messageVersion);
+                case ADD_PERSISTABLE_NETWORK_PAYLOAD_MESSAGE:
+                    return AddPersistableNetworkPayloadMessage.fromProto(proto.getAddPersistableNetworkPayloadMessage(), this, messageVersion);
+                case ACK_MESSAGE:
+                    return AckMessage.fromProto(proto.getAckMessage(), messageVersion);
+                case REPUBLISH_GOVERNANCE_DATA_REQUEST:
+                    return RepublishGovernanceDataRequest.fromProto(proto.getRepublishGovernanceDataRequest(), messageVersion);
+
+                case NEW_DAO_STATE_HASH_MESSAGE:
+                    return NewDaoStateHashMessage.fromProto(proto.getNewDaoStateHashMessage(), messageVersion);
+                case GET_DAO_STATE_HASHES_REQUEST:
+                    return GetDaoStateHashesRequest.fromProto(proto.getGetDaoStateHashesRequest(), messageVersion);
+                case GET_DAO_STATE_HASHES_RESPONSE:
+                    return GetDaoStateHashesResponse.fromProto(proto.getGetDaoStateHashesResponse(), messageVersion);
+
+                case NEW_PROPOSAL_STATE_HASH_MESSAGE:
+                    return NewProposalStateHashMessage.fromProto(proto.getNewProposalStateHashMessage(), messageVersion);
+                case GET_PROPOSAL_STATE_HASHES_REQUEST:
+                    return GetProposalStateHashesRequest.fromProto(proto.getGetProposalStateHashesRequest(), messageVersion);
+                case GET_PROPOSAL_STATE_HASHES_RESPONSE:
+                    return GetProposalStateHashesResponse.fromProto(proto.getGetProposalStateHashesResponse(), messageVersion);
+
+                case NEW_BLIND_VOTE_STATE_HASH_MESSAGE:
+                    return NewBlindVoteStateHashMessage.fromProto(proto.getNewBlindVoteStateHashMessage(), messageVersion);
+                case GET_BLIND_VOTE_STATE_HASHES_REQUEST:
+                    return GetBlindVoteStateHashesRequest.fromProto(proto.getGetBlindVoteStateHashesRequest(), messageVersion);
+                case GET_BLIND_VOTE_STATE_HASHES_RESPONSE:
+                    return GetBlindVoteStateHashesResponse.fromProto(proto.getGetBlindVoteStateHashesResponse(), messageVersion);
+
+                case BUNDLE_OF_ENVELOPES:
+                    return BundleOfEnvelopes.fromProto(proto.getBundleOfEnvelopes(), this, messageVersion);
+
+                case GET_INVENTORY_REQUEST:
+                    return GetInventoryRequest.fromProto(proto.getGetInventoryRequest(), messageVersion);
+                case GET_INVENTORY_RESPONSE:
+                    return GetInventoryResponse.fromProto(proto.getGetInventoryResponse(), messageVersion);
+
+                case GET_ACCOUNTING_BLOCKS_REQUEST:
+                    return GetAccountingBlocksRequest.fromProto(proto.getGetAccountingBlocksRequest(), messageVersion);
+                case GET_ACCOUNTING_BLOCKS_RESPONSE:
+                    return GetAccountingBlocksResponse.fromProto(proto.getGetAccountingBlocksResponse(), messageVersion);
+                case NEW_ACCOUNTING_BLOCK_BROADCAST_MESSAGE:
+                    return NewAccountingBlockBroadcastMessage.fromProto(proto.getNewAccountingBlockBroadcastMessage(), messageVersion);
+
+                default:
+                    throw new ProtobufferException("Unknown proto message case (PB.NetworkEnvelope). messageCase=" +
+                            proto.getMessageCase() + "; proto raw data=" + proto.toString());
+            }
+        } else {
+            log.error("PersistableEnvelope.fromProto: PB.NetworkEnvelope is null");
+            throw new ProtobufferException("PB.NetworkEnvelope is null");
+        }
+    }
+
+    public NetworkPayload fromProto(protobuf.StorageEntryWrapper proto) {
+        if (proto != null) {
+            switch (proto.getMessageCase()) {
+                case PROTECTED_MAILBOX_STORAGE_ENTRY:
+                    return ProtectedMailboxStorageEntry.fromProto(proto.getProtectedMailboxStorageEntry(), this);
+                case PROTECTED_STORAGE_ENTRY:
+                    return ProtectedStorageEntry.fromProto(proto.getProtectedStorageEntry(), this);
+                default:
+                    throw new ProtobufferRuntimeException("Unknown proto message case(PB.StorageEntryWrapper). " +
+                            "messageCase=" + proto.getMessageCase() + "; proto raw data=" + proto.toString());
+            }
+        } else {
+            log.error("PersistableEnvelope.fromProto: PB.StorageEntryWrapper is null");
+            throw new ProtobufferRuntimeException("PB.StorageEntryWrapper is null");
+        }
+    }
+
+    public NetworkPayload fromProto(protobuf.StoragePayload proto) {
+        if (proto != null) {
+            switch (proto.getMessageCase()) {
+                case ALERT:
+                    return Alert.fromProto(proto.getAlert());
+                case ARBITRATOR:
+                    return Arbitrator.fromProto(proto.getArbitrator());
+                case MEDIATOR:
+                    return Mediator.fromProto(proto.getMediator());
+                case REFUND_AGENT:
+                    return RefundAgent.fromProto(proto.getRefundAgent());
+                case FILTER:
+                    return Filter.fromProto(proto.getFilter());
+                case MAILBOX_STORAGE_PAYLOAD:
+                    return MailboxStoragePayload.fromProto(proto.getMailboxStoragePayload());
+                case OFFER_PAYLOAD:
+                    return OfferPayload.fromProto(proto.getOfferPayload());
+                case BSQ_SWAP_OFFER_PAYLOAD:
+                    return BsqSwapOfferPayload.fromProto(proto.getBsqSwapOfferPayload());
+                case TEMP_PROPOSAL_PAYLOAD:
+                    return TempProposalPayload.fromProto(proto.getTempProposalPayload());
+                default:
+                    throw new ProtobufferRuntimeException("Unknown proto message case (PB.StoragePayload). messageCase="
+                            + proto.getMessageCase() + "; proto raw data=" + proto.toString());
+            }
+        } else {
+            log.error("PersistableEnvelope.fromProto: PB.StoragePayload is null");
+            throw new ProtobufferRuntimeException("PB.StoragePayload is null");
+        }
+    }
+}

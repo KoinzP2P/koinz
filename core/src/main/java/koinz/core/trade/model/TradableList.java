@@ -1,0 +1,112 @@
+/*
+ * This file is part of KOINZ.
+ *
+ * KOINZ is free software: you can redistribute it and/or modify it
+ * under the terms of the GNU Affero General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or (at
+ * your option) any later version.
+ *
+ * KOINZ is distributed in the hope that it will be useful, but WITHOUT
+ * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+ * FITNESS FOR A PARTICULAR PURPOSE. See the GNU Affero General Public
+ * License for more details.
+ *
+ * You should have received a copy of the GNU Affero General Public License
+ * along with KOINZ. If not, see <http://www.gnu.org/licenses/>.
+ */
+
+package koinz.core.trade.model;
+
+import koinz.core.btc.wallet.BtcWalletService;
+import koinz.core.offer.OpenOffer;
+import koinz.core.proto.CoreProtoResolver;
+import koinz.core.trade.model.bisq_v1.BuyerAsMakerTrade;
+import koinz.core.trade.model.bisq_v1.BuyerAsTakerTrade;
+import koinz.core.trade.model.bisq_v1.SellerAsMakerTrade;
+import koinz.core.trade.model.bisq_v1.SellerAsTakerTrade;
+import koinz.core.trade.model.bsq_swap.BsqSwapBuyerAsMakerTrade;
+import koinz.core.trade.model.bsq_swap.BsqSwapBuyerAsTakerTrade;
+import koinz.core.trade.model.bsq_swap.BsqSwapSellerAsMakerTrade;
+import koinz.core.trade.model.bsq_swap.BsqSwapSellerAsTakerTrade;
+
+import koinz.common.proto.ProtoUtil;
+import koinz.common.proto.ProtobufferRuntimeException;
+import koinz.common.proto.persistable.PersistableListAsObservable;
+
+import com.google.protobuf.Message;
+
+import java.util.Collection;
+import java.util.List;
+import java.util.stream.Collectors;
+
+import lombok.extern.slf4j.Slf4j;
+
+@Slf4j
+public final class TradableList<T extends Tradable> extends PersistableListAsObservable<T> {
+
+    ///////////////////////////////////////////////////////////////////////////////////////////
+    // Constructor
+    ///////////////////////////////////////////////////////////////////////////////////////////
+
+    public TradableList() {
+    }
+
+
+    ///////////////////////////////////////////////////////////////////////////////////////////
+    // PROTO BUFFER
+    ///////////////////////////////////////////////////////////////////////////////////////////
+
+    protected TradableList(Collection<T> collection) {
+        super(collection);
+    }
+
+    @Override
+    public Message toProtoMessage() {
+        return protobuf.PersistableEnvelope.newBuilder()
+                .setTradableList(protobuf.TradableList.newBuilder()
+                        .addAllTradable(ProtoUtil.collectionToProto(getList(), protobuf.Tradable.class)))
+                .build();
+    }
+
+    public static TradableList<Tradable> fromProto(protobuf.TradableList proto,
+                                                   CoreProtoResolver coreProtoResolver,
+                                                   BtcWalletService btcWalletService) {
+        List<Tradable> list = proto.getTradableList().stream()
+                .map(tradable -> {
+                    switch (tradable.getMessageCase()) {
+                        case OPEN_OFFER:
+                            return OpenOffer.fromProto(tradable.getOpenOffer());
+                        case BUYER_AS_MAKER_TRADE:
+                            return BuyerAsMakerTrade.fromProto(tradable.getBuyerAsMakerTrade(), btcWalletService, coreProtoResolver);
+                        case BUYER_AS_TAKER_TRADE:
+                            return BuyerAsTakerTrade.fromProto(tradable.getBuyerAsTakerTrade(), btcWalletService, coreProtoResolver);
+                        case SELLER_AS_MAKER_TRADE:
+                            return SellerAsMakerTrade.fromProto(tradable.getSellerAsMakerTrade(), btcWalletService, coreProtoResolver);
+                        case SELLER_AS_TAKER_TRADE:
+                            return SellerAsTakerTrade.fromProto(tradable.getSellerAsTakerTrade(), btcWalletService, coreProtoResolver);
+                        case BSQ_SWAP_BUYER_AS_MAKER_TRADE:
+                            return BsqSwapBuyerAsMakerTrade.fromProto(tradable.getBsqSwapBuyerAsMakerTrade());
+                        case BSQ_SWAP_BUYER_AS_TAKER_TRADE:
+                            return BsqSwapBuyerAsTakerTrade.fromProto(tradable.getBsqSwapBuyerAsTakerTrade());
+                        case BSQ_SWAP_SELLER_AS_MAKER_TRADE:
+                            return BsqSwapSellerAsMakerTrade.fromProto(tradable.getBsqSwapSellerAsMakerTrade());
+                        case BSQ_SWAP_SELLER_AS_TAKER_TRADE:
+                            return BsqSwapSellerAsTakerTrade.fromProto(tradable.getBsqSwapSellerAsTakerTrade());
+                        default:
+                            log.error("Unknown messageCase. tradable.getMessageCase() = " + tradable.getMessageCase());
+                            throw new ProtobufferRuntimeException("Unknown messageCase. tradable.getMessageCase() = " +
+                                    tradable.getMessageCase());
+                    }
+                })
+                .collect(Collectors.toList());
+
+        return new TradableList<>(list);
+    }
+
+    @Override
+    public String toString() {
+        return "TradableList{" +
+                ",\n     list=" + getList() +
+                "\n}";
+    }
+}

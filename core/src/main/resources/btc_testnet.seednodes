@@ -1,0 +1,7 @@
+# KOINZ Testnet Seed Nodes
+# nodeaddress:port [(@owner)]
+koinz-seednode-1.testnet.koinz.pro:8000 (@KOINZ-Team)
+koinz-seednode-2.testnet.koinz.pro:8000 (@KOINZ-Team)
+# Direct IP fallbacks for initial bootstrap
+157.245.3.234:8000 (@KOINZ-Seed-1)
+138.197.115.242:8000 (@KOINZ-Seed-2)

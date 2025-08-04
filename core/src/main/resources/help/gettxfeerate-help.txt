@@ -1,0 +1,17 @@
+gettxfeerate
+
+NAME
+----
+gettxfeerate - get transaction fee rate
+
+SYNOPSIS
+--------
+gettxfeerate
+
+DESCRIPTION
+-----------
+Returns the most recent bitcoin network transaction fee the KOINZ server could find.
+
+EXAMPLES
+--------
+$ ./koinz-cli --password=xyz --port=9998 gettxfeerate
