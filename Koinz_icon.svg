@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" version="1.1" width="328px" height="328px"
+     style="shape-rendering:geometricPrecision; text-rendering:geometricPrecision; image-rendering:optimizeQuality; fill-rule:evenodd; clip-rule:evenodd">
+  <!-- KOINZ Logo -->
+  <defs>
+    <linearGradient id="koinzGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#00D4AA;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#0066CC;stop-opacity:1" />
+    </linearGradient>
+  </defs>
+  
+  <!-- Background Circle -->
+  <circle cx="164" cy="164" r="150" fill="url(#koinzGradient)" stroke="#003366" stroke-width="4"/>
+  
+  <!-- KOINZ Text -->
+  <text x="164" y="180" font-family="Arial, sans-serif" font-size="48" font-weight="bold" 
+        text-anchor="middle" fill="white">KOINZ</text>
+  
+  <!-- Stylized K accent -->
+  <polygon points="80,100 120,140 80,180 90,180 120,150 150,180 160,180 120,140 160,100 150,100 120,130 90,100" 
+           fill="white" opacity="0.3"/>
+           
+  <!-- Bitcoin symbol integration -->
+  <circle cx="164" cy="120" r="25" fill="none" stroke="white" stroke-width="3" opacity="0.7"/>
+  <text x="164" y="130" font-family="Arial, sans-serif" font-size="20" font-weight="bold" 
+        text-anchor="middle" fill="white" opacity="0.7">₿</text>
+</svg>
