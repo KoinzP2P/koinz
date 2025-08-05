@@ -1,0 +1,18 @@
+plugins {
+    id 'koinz.application'
+    id 'koinz.gradle.app_start_plugin.AppStartPlugin'
+}
+
+mainClassName = 'koinz.statistics.StatisticsMain'
+
+dependencies {
+    implementation project(':common')
+    implementation project(':p2p')
+    implementation project(':core')
+    annotationProcessor libs.lombok
+    compileOnly libs.lombok
+    implementation libs.slf4j.api
+    implementation(libs.google.guice) {
+        exclude(module: 'guava')
+    }
+}
