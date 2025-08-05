@@ -22,7 +22,7 @@ build
 *.java.hsw
 *.~ava
 /bundles
-/bisq-*
+/koinz-*
 /lib
 /xchange
 desktop.ini
