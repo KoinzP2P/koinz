@@ -1,0 +1,31 @@
+plugins {
+    id 'koinz.application'
+    id 'koinz.gradle.app_start_plugin.AppStartPlugin'
+}
+mainClassName = 'koinz.inventory.InventoryMonitorMain'
+
+distTar.enabled = true
+
+dependencies {
+    implementation enforcedPlatform(project(':platform'))
+    implementation project(':common')
+    implementation project(':proto')
+    implementation project(':p2p')
+    implementation project(':core')
+    implementation libs.protobuf.java
+    annotationProcessor libs.lombok
+    compileOnly libs.lombok
+    implementation libs.jetbrains.annotations
+    implementation libs.logback.classic
+    implementation libs.logback.core
+    implementation libs.google.guava
+    implementation libs.slf4j.api
+    implementation(libs.google.guice) {
+        exclude(module: 'guava')
+    }
+
+    implementation libs.spark.core
+    implementation libs.pushy
+    implementation libs.commons.codec
+    implementation libs.grpc.auth
+}
