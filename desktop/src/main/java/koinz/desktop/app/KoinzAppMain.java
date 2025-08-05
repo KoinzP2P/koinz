@@ -1,0 +1,162 @@
+/*
+ * This file is part of KOINZ.
+ *
+ * KOINZ is free software: you can redistribute it and/or modify it
+ * under the terms of the GNU Affero General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or (at
+ * your option) any later version.
+ *
+ * KOINZ is distributed in the hope that it will be useful, but WITHOUT
+ * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+ * FITNESS FOR A PARTICULAR PURPOSE. See the GNU Affero General Public
+ * License for more details.
+ *
+ * You should have received a copy of the GNU Affero General Public License
+ * along with KOINZ. If not, see <http://www.gnu.org/licenses/>.
+ */
+
+package koinz.desktop.app;
+
+import koinz.desktop.common.UITimer;
+import koinz.desktop.common.view.guice.InjectorViewFactory;
+import koinz.desktop.components.TxIdTextField;
+import koinz.desktop.setup.DesktopPersistedDataHost;
+import koinz.desktop.util.GUIUtil;
+
+import koinz.core.app.AvoidStandbyModeService;
+import koinz.core.app.KoinzExecutable;
+import koinz.core.app.TorSetup;
+import koinz.core.btc.wallet.BtcWalletService;
+import koinz.core.provider.fee.FeeService;
+import koinz.core.user.Cookie;
+import koinz.core.user.CookieKey;
+import koinz.core.user.User;
+
+import koinz.common.UserThread;
+import koinz.common.app.AppModule;
+import koinz.common.app.Version;
+
+import javafx.application.Application;
+import javafx.application.Platform;
+
+import lombok.extern.slf4j.Slf4j;
+
+@Slf4j
+public class KoinzAppMain extends KoinzExecutable {
+
+    public static final String DEFAULT_APP_NAME = "KOINZ";
+
+    private KoinzApp application;
+
+    public KoinzAppMain() {
+        super("Bisq Desktop", "bisq-desktop", DEFAULT_APP_NAME, Version.VERSION);
+    }
+
+    public static void main(String[] args) {
+        // For some reason the JavaFX launch process results in us losing the thread
+        // context class loader: reset it. In order to work around a bug in JavaFX 8u25
+        // and below, you must include the following code as the first line of your
+        // realMain method:
+        Thread.currentThread().setContextClassLoader(KoinzAppMain.class.getClassLoader());
+
+        new KoinzAppMain().execute(args);
+    }
+
+    @Override
+    public void onSetupComplete() {
+        log.debug("onSetupComplete");
+    }
+
+    ///////////////////////////////////////////////////////////////////////////////////////////
+    // First synchronous execution tasks
+    ///////////////////////////////////////////////////////////////////////////////////////////
+
+    @Override
+    protected void configUserThread() {
+        UserThread.setExecutor(Platform::runLater);
+        UserThread.setTimerClass(UITimer.class);
+    }
+
+    @Override
+    protected void launchApplication() {
+        KoinzApp.setAppLaunchedHandler(application -> {
+            KoinzAppMain.this.application = (KoinzApp) application;
+
+            onApplicationLaunched();
+        });
+
+        Application.launch(KoinzApp.class);
+    }
+
+    ///////////////////////////////////////////////////////////////////////////////////////////
+    // As application is a JavaFX application we need to wait for onApplicationLaunched
+    ///////////////////////////////////////////////////////////////////////////////////////////
+
+    @Override
+    protected void onApplicationLaunched() {
+        super.onApplicationLaunched();
+        application.setGracefulShutDownHandler(this);
+    }
+
+    @Override
+    public void handleUncaughtException(Throwable throwable, boolean doShutDown) {
+        application.handleUncaughtException(throwable, doShutDown);
+    }
+
+
+    ///////////////////////////////////////////////////////////////////////////////////////////
+    // We continue with a series of synchronous execution tasks
+    ///////////////////////////////////////////////////////////////////////////////////////////
+
+    @Override
+    protected AppModule getModule() {
+        return new BisqAppModule(config);
+    }
+
+    @Override
+    protected void applyInjector() {
+        super.applyInjector();
+
+        application.setInjector(injector);
+        injector.getInstance(InjectorViewFactory.class).setInjector(injector);
+
+        GUIUtil.setFeeService(injector.getInstance(FeeService.class));
+        TxIdTextField.setWalletService(injector.getInstance(BtcWalletService.class));
+    }
+
+    @Override
+    protected void readAllPersisted(Runnable completeHandler) {
+        super.readAllPersisted(DesktopPersistedDataHost.getPersistedDataHosts(injector), completeHandler);
+    }
+
+    @Override
+    protected void setupAvoidStandbyMode() {
+        injector.getInstance(AvoidStandbyModeService.class).init();
+    }
+
+    @Override
+    protected void startApplication() {
+        Cookie cookie = injector.getInstance(User.class).getCookie();
+        cookie.getAsOptionalBoolean(CookieKey.CLEAN_TOR_DIR_AT_RESTART).ifPresent(cleanTorDirAtRestart -> {
+            if (cleanTorDirAtRestart) {
+                injector.getInstance(TorSetup.class).cleanupTorFiles(() ->
+                                cookie.remove(CookieKey.CLEAN_TOR_DIR_AT_RESTART),
+                        log::error);
+            }
+        });
+
+        // We need to be in user thread! We mapped at launchApplication already.  Once
+        // the UI is ready we get onApplicationStarted called and start the setup there.
+        application.startApplication(this::onApplicationStarted);
+    }
+
+    @Override
+    protected void onApplicationStarted() {
+        super.onApplicationStarted();
+
+        // Relevant to have this in the logs, for support cases
+        // This can only be called after JavaFX is initialized, otherwise the version logged will be null
+        // Therefore, calling this as part of onApplicationStarted()
+        log.info("Using JavaFX {}", System.getProperty("javafx.version"));
+    }
+}

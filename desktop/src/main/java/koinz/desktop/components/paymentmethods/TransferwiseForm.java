@@ -1,0 +1,128 @@
+/*
+ * This file is part of KOINZ.
+ *
+ * KOINZ is free software: you can redistribute it and/or modify it
+ * under the terms of the GNU Affero General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or (at
+ * your option) any later version.
+ *
+ * KOINZ is distributed in the hope that it will be useful, but WITHOUT
+ * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+ * FITNESS FOR A PARTICULAR PURPOSE. See the GNU Affero General Public
+ * License for more details.
+ *
+ * You should have received a copy of the GNU Affero General Public License
+ * along with KOINZ. If not, see <http://www.gnu.org/licenses/>.
+ */
+
+package koinz.desktop.components.paymentmethods;
+
+import koinz.desktop.components.InputTextField;
+import koinz.desktop.util.FormBuilder;
+import koinz.desktop.util.Layout;
+import koinz.desktop.util.validation.TransferwiseValidator;
+
+import koinz.core.account.witness.AccountAgeWitnessService;
+import koinz.core.locale.Res;
+import koinz.core.payment.PaymentAccount;
+import koinz.core.payment.TransferwiseAccount;
+import koinz.core.payment.payload.PaymentAccountPayload;
+import koinz.core.payment.payload.TransferwiseAccountPayload;
+import koinz.core.util.coin.CoinFormatter;
+import koinz.core.util.validation.InputValidator;
+
+import javafx.scene.control.TextField;
+import javafx.scene.layout.FlowPane;
+import javafx.scene.layout.GridPane;
+
+import static koinz.desktop.util.FormBuilder.addCompactTopLabelTextField;
+import static koinz.desktop.util.FormBuilder.addCompactTopLabelTextFieldWithCopyIcon;
+import static koinz.desktop.util.FormBuilder.addTopLabelTextFieldWithCopyIcon;
+
+public class TransferwiseForm extends PaymentMethodForm {
+    private final TransferwiseAccount account;
+    private final TransferwiseValidator validator;
+
+    public static int addFormForBuyer(GridPane gridPane, int gridRow,
+                                      PaymentAccountPayload paymentAccountPayload) {
+        addTopLabelTextFieldWithCopyIcon(gridPane, gridRow, 1, Res.get("payment.email"),
+                ((TransferwiseAccountPayload) paymentAccountPayload).getEmail(), Layout.COMPACT_FIRST_ROW_AND_GROUP_DISTANCE);
+        addCompactTopLabelTextFieldWithCopyIcon(gridPane, ++gridRow, Res.get("payment.account.owner.fullname"),
+                paymentAccountPayload.getHolderNameOrPromptIfEmpty());
+        return gridRow;
+    }
+
+    public TransferwiseForm(PaymentAccount paymentAccount, AccountAgeWitnessService accountAgeWitnessService,
+                            TransferwiseValidator validator, InputValidator inputValidator, GridPane gridPane,
+                            int gridRow, CoinFormatter formatter) {
+        super(paymentAccount, accountAgeWitnessService, inputValidator, gridPane, gridRow, formatter);
+        this.account = (TransferwiseAccount) paymentAccount;
+        this.validator = validator;
+    }
+
+    @Override
+    public void addFormForAddAccount() {
+        gridRowFrom = gridRow + 1;
+
+        InputTextField emailInputTextField = FormBuilder.addInputTextField(gridPane, ++gridRow, Res.get("payment.email"));
+        emailInputTextField.setValidator(validator);
+        emailInputTextField.textProperty().addListener((ov, oldValue, newValue) -> {
+            account.setEmail(newValue.trim());
+            updateFromInputs();
+        });
+
+        InputTextField holderNameInputTextField = FormBuilder.addInputTextField(gridPane, ++gridRow,
+                Res.get("payment.account.owner.fullname"));
+        holderNameInputTextField.setValidator(inputValidator);
+        holderNameInputTextField.textProperty().addListener((ov, oldValue, newValue) -> {
+            account.setHolderName(newValue);
+            updateFromInputs();
+        });
+
+        addCurrenciesGrid(true);
+        addLimitations(false);
+        addAccountNameTextFieldWithAutoFillToggleButton();
+    }
+
+    private void addCurrenciesGrid(boolean isEditable) {
+        FlowPane flowPane = FormBuilder.addTopLabelFlowPane(gridPane, ++gridRow,
+                Res.get("payment.supportedCurrenciesForReceiver"), 20, 20).second;
+
+        if (isEditable) {
+            flowPane.setId("flow-pane-checkboxes-bg");
+        } else {
+            flowPane.setId("flow-pane-checkboxes-non-editable-bg");
+        }
+
+        account.getSupportedCurrencies().forEach(currency ->
+                fillUpFlowPaneWithCurrencies(isEditable, flowPane, currency, account));
+    }
+
+    @Override
+    protected void autoFillNameTextField() {
+        setAccountNameWithString(account.getEmail());
+    }
+
+    @Override
+    public void addFormForEditAccount() {
+        gridRowFrom = gridRow;
+        addAccountNameTextFieldWithAutoFillToggleButton();
+        addCompactTopLabelTextField(gridPane, ++gridRow, Res.get("shared.paymentMethod"),
+                Res.get(account.getPaymentMethod().getId()));
+        TextField field = addCompactTopLabelTextField(gridPane, ++gridRow, Res.get("payment.email"),
+                account.getEmail()).second;
+        field.setMouseTransparent(false);
+        addCompactTopLabelTextField(gridPane, ++gridRow, Res.get("payment.account.owner.fullname"),
+                account.getHolderName());
+        addLimitations(true);
+        addCurrenciesGrid(false);
+    }
+
+    @Override
+    public void updateAllInputsValid() {
+        allInputsValid.set(isAccountNameValid()
+                && validator.validate(account.getEmail()).isValid
+                && inputValidator.validate(account.getHolderName()).isValid
+                && account.getTradeCurrencies().size() > 0);
+    }
+}
