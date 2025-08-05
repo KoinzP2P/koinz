@@ -1,0 +1,92 @@
+# KOINZ Bitcoin Core Dockerfile
+# Secure Bitcoin Core build with GPG verification
+
+FROM ubuntu:22.04 as downloader
+
+# Install dependencies for verification
+RUN apt-get update && apt-get install -y \
+    curl \
+    gpg \
+    && rm -rf /var/lib/apt/lists/*
+
+# Set working directory
+WORKDIR /root
+
+# Copy GPG keys from seednode directory
+COPY seednode/deployment_v2/docker/bitcoind/gpg_keys/* /root/gpg_keys/
+
+# Import GPG keys for Bitcoin Core verification
+RUN gpg --import /root/gpg_keys/*
+
+# Bitcoin Core version
+ARG BITCOIN_VERSION=25.1
+
+# Download and verify Bitcoin Core
+RUN curl -SLO "https://bitcoincore.org/bin/bitcoin-core-${BITCOIN_VERSION}/bitcoin-${BITCOIN_VERSION}-x86_64-linux-gnu.tar.gz" \
+    && curl -SLO "https://bitcoincore.org/bin/bitcoin-core-${BITCOIN_VERSION}/SHA256SUMS" \
+    && curl -SLO "https://bitcoincore.org/bin/bitcoin-core-${BITCOIN_VERSION}/SHA256SUMS.asc" \
+    && sha256sum --ignore-missing --check SHA256SUMS \
+    && gpg --verify SHA256SUMS.asc \
+    && tar -xzf bitcoin-${BITCOIN_VERSION}-x86_64-linux-gnu.tar.gz \
+    && install -m 0755 -o root -g root -t /usr/local/bin bitcoin-${BITCOIN_VERSION}/bin/*
+
+# Production stage
+FROM ubuntu:22.04
+
+# Build arguments
+ARG VERSION=25.1
+ARG BUILD_DATE
+ARG VCS_REF
+
+# Metadata labels
+LABEL org.opencontainers.image.title="KOINZ Bitcoin Core"
+LABEL org.opencontainers.image.description="Bitcoin Core for KOINZ Network"
+LABEL org.opencontainers.image.version="${VERSION}"
+LABEL org.opencontainers.image.created="${BUILD_DATE}"
+LABEL org.opencontainers.image.revision="${VCS_REF}"
+LABEL org.opencontainers.image.vendor="KOINZ P2P"
+LABEL org.opencontainers.image.licenses="MIT"
+LABEL org.opencontainers.image.url="https://github.com/KoinzP2P/koinz"
+LABEL org.opencontainers.image.source="https://github.com/KoinzP2P/koinz"
+
+# Install runtime dependencies
+RUN apt-get update && apt-get install -y \
+    netcat-openbsd \
+    && rm -rf /var/lib/apt/lists/* \
+    && apt-get clean
+
+# Create bitcoin user
+RUN groupadd -r bitcoin && useradd -r -g bitcoin bitcoin
+
+# Copy Bitcoin Core binaries from downloader stage
+COPY --from=downloader /usr/local/bin/* /usr/local/bin/
+
+# Create bitcoin data directory
+RUN mkdir -p /home/bitcoin/.bitcoin \
+    && chown -R bitcoin:bitcoin /home/bitcoin/.bitcoin
+
+# Copy configuration files
+COPY docker/bitcoin/bitcoin.conf /home/bitcoin/.bitcoin/bitcoin.conf
+COPY docker/scripts/blocknotify.sh /home/bitcoin/blocknotify.sh
+RUN chmod +x /home/bitcoin/blocknotify.sh \
+    && chown bitcoin:bitcoin /home/bitcoin/blocknotify.sh
+
+# Switch to bitcoin user
+USER bitcoin
+WORKDIR /home/bitcoin
+
+# Expose Bitcoin ports
+EXPOSE 8332 8333 18332 18333
+
+# Data volume
+VOLUME ["/home/bitcoin/.bitcoin"]
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=5 \
+    CMD bitcoin-cli -datadir=/home/bitcoin/.bitcoin getblockchaininfo || exit 1
+
+# Entry point
+ENTRYPOINT ["bitcoind", "-datadir=/home/bitcoin/.bitcoin"]
+
+# Default command arguments
+CMD ["-printtoconsole", "-server=1"]

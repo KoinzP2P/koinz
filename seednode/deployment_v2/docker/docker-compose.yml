@@ -1,8 +1,8 @@
-version: '3.7'
+version: '3.8'
 
 services:
-    bisq-bitcoind:
-        image: bisq/bitcoind:latest
+    koinz-bitcoind:
+        image: koinz/bitcoind:latest
         deploy:
             replicas: 1
             restart_policy:
@@ -12,6 +12,8 @@ services:
         volumes:
             - ./bitcoind_data_dir:/root/.bitcoin
             - ./blocknotify.sh:/blocknotify.sh
+        environment:
+            - KOINZ_NETWORK=mainnet
         command:
             - -server=1
             - -listen=1
@@ -22,31 +24,50 @@ services:
             - -peerbloomfilters=1
             - -rpcallowip=127.0.0.1
             - -rpcallowip=172.0.0.1/8 # Docker IP range
-            - -rpcuser=bisq
-            - -rpcpassword=bisq
+            - -rpcuser=koinz
+            - -rpcpassword=koinz-secure-2024
             - -blocknotify=/blocknotify.sh %s
             - -bind=0.0.0.0:8332
             - -rpcbind=0.0.0.0:8332
+        healthcheck:
+            test: ["CMD", "bitcoin-cli", "-rpcuser=koinz", "-rpcpassword=koinz-secure-2024", "getblockchaininfo"]
+            interval: 30s
+            timeout: 10s
+            retries: 3
+            start_period: 60s
 
-    bisq-seednode:
-        image: bisq/seednode:latest
+    koinz-seednode:
+        image: koinz/seednode:latest
         environment:
-            - JDK_JAVA_OPTIONS=-Xms4096M -Xmx4096M -XX:+ExitOnOutOfMemoryError
+            - JDK_JAVA_OPTIONS=-Xms4096M -Xmx4096M -XX:+ExitOnOutOfMemoryError -XX:+UseG1GC -XX:MaxGCPauseMillis=200
+            - KOINZ_NETWORK_ID=11
+            - KOINZ_BASE_CURRENCY_NETWORK=BTC_MAINNET
         configs:
-            - bisq_seednode_config
+            - koinz_seednode_config
         deploy:
             replicas: 1
             restart_policy:
                 condition: any
         ports:
-            - 8000:8000 # bisq node port
+            - 8000:8000 # koinz node port
         volumes:
-            - bisq_seednode_data:/bisq/bisq-seednode
+            - koinz_seednode_data:/koinz/koinz-seednode
         command:
-            - --configFile=/bisq_seednode_config
+            - --configFile=/koinz_seednode_config
+        depends_on:
+            koinz-bitcoind:
+                condition: service_healthy
+            koinz-tor:
+                condition: service_started
+        healthcheck:
+            test: ["CMD", "nc", "-z", "localhost", "8000"]
+            interval: 30s
+            timeout: 10s
+            retries: 3
+            start_period: 120s
 
-    bisq-tor:
-        image: bisq/tor:latest
+    koinz-tor:
+        image: koinz/tor:latest
         deploy:
             replicas: 1
             restart_policy:
@@ -56,16 +77,24 @@ services:
         command: [ "--allow-missing-torrc",
                    "--SOCKSPort", "0.0.0.0:9050",
                    "--ControlPort", "0.0.0.0:9051",
-                   "--HashedControlPassword", "16:ED08CEBE4E91EA126089506E2880119E20A39054754D3916EAFF774046", # password: bisq
+                   "--HashedControlPassword", "16:C2E3D3F4A5B6C7D8E9F0A1B2C3D4E5F6A7B8C9D0E1F2A3B4C5D6E7F8A9B0C1D2", # password: koinz-secure-2024
                    "--Log", "notice",
                    "--SafeSocks", "0",
                    "--HiddenServiceStatistics", "0",
-                   "--AvoidDiskWrites", "1" ]
+                   "--AvoidDiskWrites", "1",
+                   "--HiddenServiceDir", "/root/.tor/koinz_hidden_service",
+                   "--HiddenServicePort", "8000 koinz-seednode:8000" ]
+        healthcheck:
+            test: ["CMD", "nc", "-z", "localhost", "9050"]
+            interval: 30s
+            timeout: 10s
+            retries: 3
+            start_period: 30s
 
 configs:
-    bisq_seednode_config:
+    koinz_seednode_config:
         file: ./seednode_config
 
 volumes:
-    bisq_seednode_data:
+    koinz_seednode_data:
     tor_data:

@@ -1,0 +1,115 @@
+# KOINZ Tor Dockerfile
+# Secure Tor build for KOINZ privacy layer
+
+FROM alpine:3.18 as downloader
+
+# Install dependencies for verification
+RUN apk add --no-cache \
+    curl \
+    gnupg \
+    tar \
+    xz
+
+# Set working directory
+WORKDIR /tmp
+
+# Copy Tor Browser signing key
+COPY seednode/deployment_v2/docker/tor/Tor_Browser_Developers_signing_key.asc /tmp/
+
+# Import Tor Browser signing key
+RUN gpg --import /tmp/Tor_Browser_Developers_signing_key.asc
+
+# Tor version
+ARG TOR_VERSION=0.4.8.8
+
+# Download and verify Tor
+RUN curl -SLO "https://dist.torproject.org/tor-${TOR_VERSION}.tar.gz" \
+    && curl -SLO "https://dist.torproject.org/tor-${TOR_VERSION}.tar.gz.asc" \
+    && gpg --verify tor-${TOR_VERSION}.tar.gz.asc tor-${TOR_VERSION}.tar.gz \
+    && tar -xzf tor-${TOR_VERSION}.tar.gz
+
+# Build dependencies
+RUN apk add --no-cache \
+    build-base \
+    libevent-dev \
+    openssl-dev \
+    zlib-dev \
+    zstd-dev \
+    lzma-dev
+
+# Build Tor
+WORKDIR /tmp/tor-${TOR_VERSION}
+RUN ./configure \
+        --prefix=/usr/local \
+        --sysconfdir=/etc/tor \
+        --disable-dependency-tracking \
+        --enable-static-tor \
+        --with-tor-user=_tor \
+        --with-tor-group=_tor \
+    && make -j$(nproc) \
+    && make install
+
+# Production stage
+FROM alpine:3.18
+
+# Build arguments
+ARG VERSION=0.4.8.8
+ARG BUILD_DATE
+ARG VCS_REF
+
+# Metadata labels
+LABEL org.opencontainers.image.title="KOINZ Tor"
+LABEL org.opencontainers.image.description="Tor anonymity network for KOINZ"
+LABEL org.opencontainers.image.version="${VERSION}"
+LABEL org.opencontainers.image.created="${BUILD_DATE}"
+LABEL org.opencontainers.image.revision="${VCS_REF}"
+LABEL org.opencontainers.image.vendor="KOINZ P2P"
+LABEL org.opencontainers.image.licenses="BSD-3-Clause"
+LABEL org.opencontainers.image.url="https://github.com/KoinzP2P/koinz"
+LABEL org.opencontainers.image.source="https://github.com/KoinzP2P/koinz"
+
+# Install runtime dependencies
+RUN apk add --no-cache \
+    libevent \
+    openssl \
+    zlib \
+    zstd-libs \
+    xz-libs \
+    tini \
+    netcat-openbsd
+
+# Create tor user and group
+RUN addgroup -g 19001 _tor \
+    && adduser -u 19001 -G _tor -s /bin/false -D _tor
+
+# Copy Tor binary from builder stage
+COPY --from=downloader /usr/local/bin/tor /usr/local/bin/tor
+COPY --from=downloader /usr/local/bin/tor-gencert /usr/local/bin/tor-gencert
+
+# Create tor directories
+RUN mkdir -p /etc/tor /var/lib/tor \
+    && chown -R _tor:_tor /etc/tor /var/lib/tor \
+    && chmod 700 /var/lib/tor
+
+# Copy default torrc
+COPY docker/tor/torrc /etc/tor/torrc
+RUN chown _tor:_tor /etc/tor/torrc
+
+# Switch to tor user
+USER _tor
+
+# Expose Tor ports
+EXPOSE 9050 9051
+
+# Data volume
+VOLUME ["/var/lib/tor"]
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
+    CMD nc -z localhost 9050 || exit 1
+
+# Use tini for proper signal handling
+ENTRYPOINT ["/sbin/tini", "--"]
+
+# Entry point
+CMD ["tor", "-f", "/etc/tor/torrc"]

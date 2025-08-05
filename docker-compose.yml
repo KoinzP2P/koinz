@@ -1,0 +1,247 @@
+version: '3.8'
+
+# KOINZ Complete Stack - Docker Compose Orchestration
+# Preserves Bisq's proven architecture while implementing KOINZ network isolation
+
+services:
+  # Bitcoin Core - Blockchain Backend
+  koinz-bitcoind:
+    image: koinz/bitcoind:latest
+    container_name: koinz-bitcoind
+    restart: unless-stopped
+    ports:
+      - "8333:8333"   # Bitcoin P2P
+      - "8332:8332"   # Bitcoin RPC
+    volumes:
+      - koinz_bitcoin_data:/root/.bitcoin
+      - ./docker/bitcoin/bitcoin.conf:/root/.bitcoin/bitcoin.conf:ro
+      - ./docker/scripts/blocknotify.sh:/blocknotify.sh:ro
+    environment:
+      - KOINZ_NETWORK=mainnet
+      - BITCOIN_RPC_USER=koinz
+      - BITCOIN_RPC_PASSWORD=koinz-secure-2024
+    command:
+      - -server=1
+      - -listen=1
+      - -discover=1
+      - -txindex=1
+      - -dbcache=2048
+      - -maxconnections=125
+      - -peerbloomfilters=1
+      - -rpcallowip=0.0.0.0/0
+      - -rpcuser=koinz
+      - -rpcpassword=koinz-secure-2024
+      - -rpcbind=0.0.0.0:8332
+      - -blocknotify=/blocknotify.sh %s
+    healthcheck:
+      test: ["CMD", "bitcoin-cli", "-rpcuser=koinz", "-rpcpassword=koinz-secure-2024", "getblockchaininfo"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+    networks:
+      - koinz-network
+
+  # Tor Network - Privacy Layer
+  koinz-tor:
+    image: koinz/tor:latest
+    container_name: koinz-tor
+    restart: unless-stopped
+    volumes:
+      - koinz_tor_data:/var/lib/tor
+      - ./docker/tor/torrc:/etc/tor/torrc:ro
+    environment:
+      - TOR_CONTROL_PASSWORD=koinz-secure-2024
+    command:
+      - --allow-missing-torrc
+      - --SOCKSPort
+      - 0.0.0.0:9050
+      - --ControlPort
+      - 0.0.0.0:9051
+      - --HashedControlPassword
+      - 16:C2E3D3F4A5B6C7D8E9F0A1B2C3D4E5F6A7B8C9D0E1F2A3B4C5D6E7F8A9B0C1D2
+      - --Log
+      - notice
+      - --SafeSocks
+      - 0
+      - --HiddenServiceStatistics
+      - 0
+      - --AvoidDiskWrites
+      - 1
+      - --HiddenServiceDir
+      - /var/lib/tor/koinz_seednode
+      - --HiddenServicePort
+      - 8000 koinz-seednode:8000
+      - --HiddenServiceDir
+      - /var/lib/tor/koinz_desktop
+      - --HiddenServicePort
+      - 9999 koinz-desktop:9999
+    healthcheck:
+      test: ["CMD", "nc", "-z", "localhost", "9050"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    networks:
+      - koinz-network
+
+  # KOINZ Seed Node - P2P Network Bootstrap
+  koinz-seednode:
+    image: koinz/seednode:latest
+    container_name: koinz-seednode
+    restart: unless-stopped
+    ports:
+      - "8000:8000"   # KOINZ P2P Port
+    volumes:
+      - koinz_seednode_data:/koinz/seednode
+      - ./docker/seednode/koinz.properties:/koinz/seednode/koinz.properties:ro
+    environment:
+      - JDK_JAVA_OPTIONS=-Xms4096M -Xmx4096M -XX:+UseG1GC -XX:MaxGCPauseMillis=200 -XX:+ExitOnOutOfMemoryError
+      - KOINZ_NETWORK_ID=11
+      - KOINZ_BASE_CURRENCY_NETWORK=BTC_MAINNET
+      - KOINZ_BTC_NODES=koinz-bitcoind:8332
+      - KOINZ_TOR_PROXY=koinz-tor:9050
+      - KOINZ_TOR_CONTROL_PORT=koinz-tor:9051
+      - KOINZ_NODE_PORT=8000
+      - KOINZ_USE_TOR_FOR_BTC=true
+    depends_on:
+      koinz-bitcoind:
+        condition: service_healthy
+      koinz-tor:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "nc", "-z", "localhost", "8000"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 120s
+    networks:
+      - koinz-network
+
+  # KOINZ Desktop - GUI Application (Optional for headless deployments)
+  koinz-desktop:
+    image: koinz/desktop:latest
+    container_name: koinz-desktop
+    restart: unless-stopped
+    ports:
+      - "9999:9999"   # Desktop API Port
+    volumes:
+      - koinz_desktop_data:/koinz/desktop
+      - ./docker/desktop/koinz.properties:/koinz/desktop/koinz.properties:ro
+    environment:
+      - JDK_JAVA_OPTIONS=-Xms2048M -Xmx2048M -XX:+UseG1GC -XX:MaxGCPauseMillis=200
+      - KOINZ_NETWORK_ID=11
+      - KOINZ_SEED_NODES=koinz-seednode:8000
+      - KOINZ_BTC_NODES=koinz-bitcoind:8332
+      - KOINZ_TOR_PROXY=koinz-tor:9050
+      - DISPLAY=${DISPLAY:-:0}
+    depends_on:
+      koinz-seednode:
+        condition: service_healthy
+    profiles:
+      - desktop
+    networks:
+      - koinz-network
+
+  # KOINZ API - REST API Service
+  koinz-api:
+    image: koinz/api:latest
+    container_name: koinz-api
+    restart: unless-stopped
+    ports:
+      - "8080:8080"   # REST API Port
+    volumes:
+      - koinz_api_data:/koinz/api
+      - ./docker/api/koinz.properties:/koinz/api/koinz.properties:ro
+    environment:
+      - JDK_JAVA_OPTIONS=-Xms1024M -Xmx1024M -XX:+UseG1GC
+      - KOINZ_NETWORK_ID=11
+      - KOINZ_SEED_NODES=koinz-seednode:8000
+      - KOINZ_BTC_NODES=koinz-bitcoind:8332
+      - KOINZ_API_PORT=8080
+      - KOINZ_API_CORS_ENABLED=true
+    depends_on:
+      koinz-seednode:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/api/v1/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    networks:
+      - koinz-network
+
+  # KOINZ Statistics Node - Network Metrics
+  koinz-statsnode:
+    image: koinz/statsnode:latest
+    container_name: koinz-statsnode
+    restart: unless-stopped
+    ports:
+      - "8181:8181"   # Stats Port
+    volumes:
+      - koinz_stats_data:/koinz/stats
+    environment:
+      - JDK_JAVA_OPTIONS=-Xms512M -Xmx512M -XX:+UseG1GC
+      - KOINZ_NETWORK_ID=11
+      - KOINZ_SEED_NODES=koinz-seednode:8000
+      - KOINZ_STATS_PORT=8181
+    depends_on:
+      koinz-seednode:
+        condition: service_healthy
+    networks:
+      - koinz-network
+
+  # KOINZ Inventory Monitor - Network Monitoring
+  koinz-inventory:
+    image: koinz/inventory:latest
+    container_name: koinz-inventory
+    restart: unless-stopped
+    ports:
+      - "8282:8282"   # Inventory Port
+    volumes:
+      - koinz_inventory_data:/koinz/inventory
+    environment:
+      - JDK_JAVA_OPTIONS=-Xms512M -Xmx512M -XX:+UseG1GC
+      - KOINZ_NETWORK_ID=11
+      - KOINZ_SEED_NODES=koinz-seednode:8000
+      - KOINZ_INVENTORY_PORT=8282
+    depends_on:
+      koinz-seednode:
+        condition: service_healthy
+    networks:
+      - koinz-network
+
+# Networks
+networks:
+  koinz-network:
+    driver: bridge
+    ipam:
+      driver: default
+      config:
+        - subnet: 172.20.0.0/16
+          gateway: 172.20.0.1
+
+# Persistent Volumes
+volumes:
+  koinz_bitcoin_data:
+    driver: local
+  koinz_tor_data:
+    driver: local
+  koinz_seednode_data:
+    driver: local
+  koinz_desktop_data:
+    driver: local
+  koinz_api_data:
+    driver: local
+  koinz_stats_data:
+    driver: local
+  koinz_inventory_data:
+    driver: local
+
+# Configuration Profiles
+# Usage:
+#   Full stack: docker-compose up
+#   Headless:   docker-compose up koinz-bitcoind koinz-tor koinz-seednode koinz-api
+#   Desktop:    docker-compose --profile desktop up
+#   Monitoring: docker-compose up koinz-statsnode koinz-inventory

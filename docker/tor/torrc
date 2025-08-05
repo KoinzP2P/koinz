@@ -1,0 +1,77 @@
+# KOINZ Tor Configuration
+# Privacy-focused configuration for KOINZ network
+
+# Basic settings
+User _tor
+PidFile /var/lib/tor/tor.pid
+Log notice stdout
+DataDirectory /var/lib/tor
+
+# SOCKS proxy
+SOCKSPort 0.0.0.0:9050
+SOCKSPolicy accept *
+
+# Control port
+ControlPort 0.0.0.0:9051
+HashedControlPassword 16:C2E3D3F4A5B6C7D8E9F0A1B2C3D4E5F6A7B8C9D0E1F2A3B4C5D6E7F8A9B0C1D2
+
+# Security settings
+SafeSocks 0
+TestSocks 1
+WarnUnsafeSocks 0
+
+# Performance settings
+AvoidDiskWrites 1
+HardwareAccel 1
+
+# Hidden service for KOINZ seednode
+HiddenServiceDir /var/lib/tor/koinz_seednode/
+HiddenServicePort 8000 koinz-seednode:8000
+HiddenServiceVersion 3
+
+# Hidden service for KOINZ desktop (optional)
+#HiddenServiceDir /var/lib/tor/koinz_desktop/
+#HiddenServicePort 9999 koinz-desktop:9999
+#HiddenServiceVersion 3
+
+# Exit policy (no exit traffic)
+ExitPolicy reject *:*
+
+# Directory authorities (use defaults)
+# UseMicrodescriptors 1
+# FetchDirInfoEarly 1
+# FetchDirInfoExtraEarly 1
+
+# Circuit settings
+CircuitBuildTimeout 60
+CircuitIdleTimeout 1800
+CircuitStreamTimeout 120
+
+# Performance optimizations
+NumEntryGuards 8
+NumDirectoryGuards 3
+GuardLifetime 30 days
+
+# Bandwidth settings (optional limits)
+# BandwidthRate 10 MB
+# BandwidthBurst 20 MB
+# RelayBandwidthRate 5 MB
+# RelayBandwidthBurst 10 MB
+
+# Client settings
+ClientOnly 1
+ClientUseIPv6 1
+ClientPreferIPv6DirPort 1
+
+# Statistics (disable for privacy)
+HiddenServiceStatistics 0
+ExtraInfoStatistics 0
+ConnDirectionStatistics 0
+EntryStatistics 0
+ExitPortStatistics 0
+CellStatistics 0
+DirReqStatistics 0
+
+# Disable unused features
+AssumeReachable 0
+PublishServerDescriptor 0
